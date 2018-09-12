@@ -1,0 +1,16 @@
+[Unit]
+Description=VoteBot
+Requires=network.target
+After=multi-user.target
+
+[Service]
+EnvironmentFile=/etc/vote-bot/.env
+PIDFile=/tmp/vote-bot.pid
+User=root
+Group=root
+WorkingDirectory=/
+ExecStart=/bin/bash -c 'vote-bot'
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
