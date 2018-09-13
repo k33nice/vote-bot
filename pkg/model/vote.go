@@ -31,13 +31,23 @@ func GetVotes(where ...string) []Vote {
 	return votes
 }
 
-// GetVotesCount - return votes count for vote id.
-func GetVotesCount(voteID int) int {
-	var count int
+// VoteResult - represent vote results by vote id.
+type VoteResult struct {
+	PressedBtn string
+	Count      int
+}
 
-	db.Model(&Vote{}).Where(Vote{VoteID: voteID}).Count(&count)
+// GetVoteResult - return votes count for vote id.
+func GetVoteResult(voteID int) []VoteResult {
+	var res []VoteResult
 
-	return count
+	db.Model(&Vote{}).
+		Where(Vote{VoteID: voteID}).
+		Select("COUNT(pressed_btn) AS count, pressed_btn").
+		Group("pressed_btn").
+		Scan(&res)
+
+	return res
 }
 
 // GetVotesByVoteID - return votes by vote id.

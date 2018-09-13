@@ -29,7 +29,7 @@ func init() {
 
 func main() {
 	bot.Handle("/help", func(m *tb.Message) {
-		bot.Send(m.Chat, vote.HelpMessage)
+		bot.Send(m.Chat, "```"+vote.HelpMessage+"```", tb.ModeMarkdown)
 	})
 
 	bot.Handle("/where", func(m *tb.Message) {
@@ -39,6 +39,10 @@ func main() {
 
 	bot.Handle("/info", func(m *tb.Message) {
 		bot.Send(m.Chat, cfg.Place.URL)
+	})
+
+	bot.Handle("/result", func(m *tb.Message) {
+		bot.Send(m.Chat, bot.GetVoteResult())
 	})
 
 	bot.Handle("/start", handleStart)

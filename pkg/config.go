@@ -18,6 +18,11 @@ type Config struct {
 			Longitude float64
 		}
 	}
+	Formats struct {
+		VoteFormat   string
+		ResultFormat string
+	}
+	NoResult string
 }
 
 // NewConfig - return new config instance

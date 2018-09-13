@@ -1,9 +1,11 @@
 package vote
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"log"
 	"math/rand"
 	"strconv"
@@ -20,10 +22,11 @@ const shitSymbol = "💩"
 
 // HelpMessage - show help message.
 const HelpMessage = `
-	/help show this help message.
-	/start start bot.
-	/where show place where we playing.
-	/info show info.
+	/help   - show this help message.
+	/start  - start bot.
+	/where  - show place where we playing.
+	/info   - show info.
+	/result - last vote result.
 `
 
 // Bot - represent a separate telegram bot instance.
@@ -51,17 +54,6 @@ func getRandInt() int {
 	rand.Seed(time.Now().UnixNano())
 	return rand.Int()
 }
-
-var format = `
-	%s
-	*Шо вы %s?*
-
-	_%s (%d)_
-	%s
-	----------
-	_%s (%d)_
-	%s
-`
 
 // Vote - struct for vote.
 type Vote struct {
@@ -94,7 +86,7 @@ func (b *Bot) CreateVote() error {
 	rand.Seed(time.Now().UnixNano())
 	i := rand.Intn(len(b.Config.Appeals))
 
-	b.Vote = &Vote{Format: format, RandAppeal: b.Config.Appeals[i]}
+	b.Vote = &Vote{Format: b.Config.Formats.VoteFormat, RandAppeal: b.Config.Appeals[i]}
 	b.Unique = getRandInt()
 
 	msg, mrk, parseMode := b.getVoteMessage()
@@ -222,13 +214,44 @@ func (b *Bot) UpdateVote() error {
 	if b.Vote == nil {
 		rand.Seed(time.Now().UnixNano())
 		i := rand.Intn(len(b.Config.Appeals))
-		b.Vote = &Vote{Format: format, RandAppeal: b.Config.Appeals[i]}
+		b.Vote = &Vote{Format: b.Config.Formats.ResultFormat, RandAppeal: b.Config.Appeals[i]}
 	}
 
 	newMsg, mkp, parseMode := b.getVoteMessage()
 	b.Edit(b.Pinned, newMsg, mkp, parseMode)
 
 	return nil
+}
+
+// GetVoteResult - return result of current vote.
+func (b *Bot) GetVoteResult() string {
+	result := b.Config.NoResult
+	if b.Pinned != nil {
+		yesBtn, _ := b.getButtons()
+
+		msgID, _ := b.Pinned.MessageSig()
+		id, _ := strconv.Atoi(msgID)
+		results := model.GetVoteResult(id)
+
+		agree := 0
+		disagree := 0
+		for _, r := range results {
+			if r.PressedBtn == yesBtn.Data {
+				agree = r.Count
+			} else {
+				disagree = r.Count
+			}
+		}
+
+		t := template.Must(template.New("").Parse(b.Config.Formats.ResultFormat))
+		data := map[string]int{
+			"Agree":    agree,
+			"Disagree": disagree,
+		}
+		result = execTpl(t, data)
+	}
+
+	return result
 }
 
 func (b *Bot) getVoteMessage() (string, *tb.ReplyMarkup, tb.ParseMode) {
@@ -279,15 +302,39 @@ func (b *Bot) voteCaption() string {
 		}
 	}
 
-	return fmt.Sprintf(
-		b.Vote.Format,
-		strings.Repeat(userSymbol, agCount),
-		b.Vote.RandAppeal,
-		yesBtn.Text,
-		agCount,
-		agree,
-		noBtn.Text,
-		dgCount,
-		disagree,
-	)
+	t := template.Must(template.New("").Parse(b.Config.Formats.VoteFormat))
+
+	data := map[string]interface{}{
+		"Symbols":       strings.Repeat(userSymbol, agCount),
+		"Appeal":        b.Vote.RandAppeal,
+		"Yes":           yesBtn.Text,
+		"Agree":         agCount,
+		"AgreeNames":    agree,
+		"No":            noBtn.Text,
+		"Disagree":      dgCount,
+		"DisagreeNames": disagree,
+		"Date":          nextSunday().Format("2006-01-02 15:04"),
+	}
+
+	return execTpl(t, data)
+}
+
+func nextSunday() time.Time {
+	t := time.Now()
+
+	weekday := int(t.Weekday())
+	if weekday == 0 {
+		return t
+	}
+	sunday := t.AddDate(0, 0, (7 - weekday))
+
+	loc, _ := time.LoadLocation("Europe/Kiev")
+
+	return time.Date(sunday.Year(), sunday.Month(), sunday.Day(), 20, 0, 0, 0, loc)
+}
+
+func execTpl(t *template.Template, data interface{}) string {
+	buf := bytes.Buffer{}
+	t.Execute(&buf, data)
+	return buf.String()
 }
