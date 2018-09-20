@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	vote "github.com/k33nice/vote-bot/pkg"
@@ -47,6 +49,8 @@ func main() {
 
 	bot.Handle("/start", handleStart)
 
+	bot.Handle("/start_on_channel", handleStartOnChannel)
+
 	bot.Handle(tb.OnAddedToGroup, handleStart)
 
 	go func() {
@@ -65,7 +69,7 @@ func main() {
 
 			curYear, curWeek := time.Now().ISOWeek()
 			pinYear, pinWeek := date.ISOWeek()
-			if curWeek != pinWeek && curYear != pinYear && un == bot.Me.Username {
+			if (curWeek != pinWeek || curYear != pinYear) && time.Now().Hour() == 16 && un == bot.Me.Username {
 				bot.UnpinMessage()
 			}
 
@@ -95,4 +99,26 @@ func handleStart(m *tb.Message) {
 			bot.Pinned = pm
 		}
 	}
+}
+
+func handleStartOnChannel(m *tb.Message) {
+	if strings.ToLower(m.Sender.Username) != "k33nice" {
+		return
+	}
+
+	chatID := m.Payload
+
+	chat, _ := bot.ChatByID(chatID)
+
+	bot.Channel = chat
+
+	pm, err := bot.GetPinnedMessage(int(chat.ID))
+	if err != nil {
+		log.Panic(err)
+	}
+	if pm != nil {
+		bot.Pinned = pm
+	}
+
+	bot.Send(m.Sender, fmt.Sprintf("chatID: %d", chat.ID))
 }
