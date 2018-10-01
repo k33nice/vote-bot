@@ -21,6 +21,7 @@ type Config struct {
 	Formats struct {
 		VoteFormat   string
 		ResultFormat string
+		RemindFormat string
 	}
 	NoResult string
 }

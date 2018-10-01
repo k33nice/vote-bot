@@ -113,14 +113,8 @@ func (b *Bot) buttonHandler(btn tb.InlineButton) func(*tb.Callback) {
 	return func(c *tb.Callback) {
 		b.Respond(c, &tb.CallbackResponse{Text: btn.Text})
 
-		msgID, _ := b.Pinned.MessageSig()
-		id, err := strconv.Atoi(msgID)
-		if err != nil {
-			log.Panic(err)
-		}
-
 		model.CreateVote(&model.Vote{
-			VoteID:     id,
+			VoteID:     b.getMsgID(),
 			UserID:     c.Sender.ID,
 			VoterName:  c.Sender.Username,
 			FirstName:  c.Sender.FirstName,
@@ -229,9 +223,7 @@ func (b *Bot) GetVoteResult() string {
 	if b.Pinned != nil {
 		yesBtn, _ := b.getButtons()
 
-		msgID, _ := b.Pinned.MessageSig()
-		id, _ := strconv.Atoi(msgID)
-		results := model.GetVoteResult(id)
+		results := model.GetVoteResult(b.getMsgID())
 
 		agree := 0
 		disagree := 0
@@ -254,6 +246,32 @@ func (b *Bot) GetVoteResult() string {
 	return result
 }
 
+// SendReminder - send reminder for players.
+func (b *Bot) SendReminder() {
+	if b.Pinned != nil {
+		voters := model.GetVotesByVoteID(b.getMsgID())
+		yesBtn, _ := b.getButtons()
+
+		var users []string
+		for _, voter := range voters {
+			if voter.PressedBtn == yesBtn.Data {
+				users = append(users, fmt.Sprintf("[%s %s](tg://user?id=%d)", voter.FirstName, voter.LastName, voter.UserID))
+			}
+		}
+
+		if len(users) >= 8 {
+			t := template.Must(template.New("").Parse(b.Config.Formats.RemindFormat))
+			data := map[string]string{
+				"Appeal": b.Vote.RandAppeal,
+				"Users":  strings.Join(users, " "),
+			}
+			result := execTpl(t, data)
+
+			b.Send(b.Channel, result, tb.ModeMarkdown)
+		}
+	}
+}
+
 func (b *Bot) getVoteMessage() (string, *tb.ReplyMarkup, tb.ParseMode) {
 	yB, nB := b.getButtons()
 	inlineKeys := [][]tb.InlineButton{
@@ -272,9 +290,7 @@ func (b *Bot) voteCaption() string {
 
 	yesBtn, noBtn := b.getButtons()
 	if b.Pinned != nil {
-		msgID, _ := b.Pinned.MessageSig()
-		id, _ := strconv.Atoi(msgID)
-		voters := model.GetVotesByVoteID(id)
+		voters := model.GetVotesByVoteID(b.getMsgID())
 		for _, voter := range voters {
 
 			var symbol string
@@ -319,18 +335,24 @@ func (b *Bot) voteCaption() string {
 	return execTpl(t, data)
 }
 
+func (b *Bot) getMsgID() int {
+	msgID, _ := b.Pinned.MessageSig()
+	id, _ := strconv.Atoi(msgID)
+
+	return id
+}
+
 func nextSunday() time.Time {
-	t := time.Now()
+	date := time.Now()
 
-	weekday := int(t.Weekday())
-	if weekday == 0 {
-		return t
-	}
-	sunday := t.AddDate(0, 0, (7 - weekday))
-
+	weekday := int(date.Weekday())
 	loc, _ := time.LoadLocation("Europe/Kiev")
 
-	return time.Date(sunday.Year(), sunday.Month(), sunday.Day(), 20, 0, 0, 0, loc)
+	if weekday != 0 {
+		date = date.AddDate(0, 0, (7 - weekday))
+	}
+
+	return time.Date(date.Year(), date.Month(), date.Day(), 19, 0, 0, 0, loc)
 }
 
 func execTpl(t *template.Template, data interface{}) string {

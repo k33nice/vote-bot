@@ -10,6 +10,7 @@
     "Formats": {
         "voteFormat": "",
         "resultFormat": "",
+        "remidFromat": ""
     },
     "noResult": "",
 }

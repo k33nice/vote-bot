@@ -58,6 +58,7 @@ func main() {
 			var un string
 			var date time.Time
 
+			now := time.Now()
 			switch m := bot.Pinned.(type) {
 			case *tb.Message:
 				date = m.Time()
@@ -67,16 +68,20 @@ func main() {
 				date = time.Unix(int64(m.Date), 0)
 			}
 
-			curYear, curWeek := time.Now().ISOWeek()
+			curYear, curWeek := now.ISOWeek()
 			pinYear, pinWeek := date.ISOWeek()
-			if (curWeek != pinWeek || curYear != pinYear) && time.Now().Hour() == 16 && un == bot.Me.Username {
+			if (curWeek != pinWeek || curYear != pinYear) && now.Hour() == 16 && un == bot.Me.Username {
 				bot.UnpinMessage()
 			}
 
-			if bot.Pinned != nil && un == bot.Me.Username {
+			if bot.Pinned != nil && un == bot.Me.Username && (curWeek == pinWeek && curYear == pinYear) {
 				bot.UpdateVote()
 			} else {
 				bot.CreateVote()
+			}
+
+			if now.Weekday() == time.Saturday && now.Hour() == 20 {
+				bot.SendReminder()
 			}
 
 			bot.CreateHandlers()
