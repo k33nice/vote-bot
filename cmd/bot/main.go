@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,10 +53,13 @@ func main() {
 
 	bot.Handle("/start_on_channel", handleStartOnChannel)
 
+	bot.Handle("/set_date", handleSetDate)
+
 	bot.Handle(tb.OnAddedToGroup, handleStart)
 
 	go func() {
 		for {
+			log.Println("***BOT LOOP***")
 			var un string
 			var date time.Time
 
@@ -72,15 +77,25 @@ func main() {
 			pinYear, pinWeek := date.ISOWeek()
 			if (curWeek != pinWeek || curYear != pinYear) && now.Hour() == 16 && un == bot.Me.Username {
 				bot.UnpinMessage()
+				log.Println("Unpin message")
 			}
 
 			if bot.Pinned != nil && un == bot.Me.Username && (curWeek == pinWeek && curYear == pinYear) {
-				bot.UpdateVote()
-			} else {
-				bot.CreateVote()
+				log.Println("Update vote")
+				if err := bot.UpdateVote(); err != nil {
+					log.Printf("caught err: %s", err)
+				}
 			}
 
-			if now.Weekday() == time.Saturday && now.Hour() == 20 {
+			if bot.Pinned == nil {
+				log.Println("Create vote")
+				if err := bot.CreateVote(); err != nil {
+					log.Printf("caught error: %s", err)
+				}
+			}
+
+			if int(now.Weekday()) == bot.Config.Weekday-1 && now.Hour() == 20 {
+				log.Println("send reminder")
 				bot.SendReminder()
 			}
 
@@ -111,6 +126,7 @@ func handleStartOnChannel(m *tb.Message) {
 		return
 	}
 
+	log.Println("HANDLE START")
 	chatID := m.Payload
 
 	chat, _ := bot.ChatByID(chatID)
@@ -119,11 +135,72 @@ func handleStartOnChannel(m *tb.Message) {
 
 	pm, err := bot.GetPinnedMessage(int(chat.ID))
 	if err != nil {
-		log.Panic(err)
+		log.Printf("handle start err: %s", err)
 	}
+	log.Println(pm.Text)
 	if pm != nil {
 		bot.Pinned = pm
 	}
 
 	bot.Send(m.Sender, fmt.Sprintf("chatID: %d", chat.ID))
+}
+
+func handleSetDate(m *tb.Message) {
+	allowedUsers := map[string]bool{
+		"k33nice":  true,
+		"sensei_k": true,
+		"timzekid": true,
+	}
+
+	sender := strings.ToLower(m.Sender.Username)
+	if _, ok := allowedUsers[sender]; !ok {
+		bot.Send(m.Sender, "Permission denied, Пёс")
+		return
+	}
+
+	allowedDays := []string{
+		time.Sunday.String(), time.Monday.String(), time.Tuesday.String(), time.Wednesday.String(),
+		time.Thursday.String(), time.Friday.String(), time.Saturday.String(),
+	}
+	dayReg := strings.Join(allowedDays, "|")
+	matches := regexp.MustCompile(`(` + dayReg + `) (\d{2}):(\d{2})`).FindStringSubmatch(m.Payload)
+
+	wd, hour, min := 0, 19, 0
+	var err error
+	if matches == nil || len(matches) != 4 {
+		formatError(m)
+		return
+	}
+
+	for i, d := range allowedDays {
+		if d == matches[1] {
+			wd = i
+		}
+	}
+
+	if err != nil {
+		formatError(m)
+		return
+	}
+
+	hour, err = strconv.Atoi(matches[2])
+	if err != nil {
+		formatError(m)
+		return
+	}
+	min, err = strconv.Atoi(matches[3])
+	if err != nil {
+		formatError(m)
+		return
+	}
+	bot.Config.Weekday = wd
+	bot.Config.Hour = hour
+	bot.Config.Minute = min
+
+	bot.UpdateVote()
+	bot.Send(m.Sender, "👌")
+}
+
+func formatError(m *tb.Message) {
+	bot.Send(m.Sender, fmt.Sprintf("Лоховской формат: %s, нада типо Sunday 19:00", m.Payload))
 }

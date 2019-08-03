@@ -3,7 +3,6 @@ package vote
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/k33nice/vote-bot/pkg/model"
+	"github.com/pkg/errors"
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
@@ -92,11 +92,15 @@ func (b *Bot) CreateVote() error {
 	msg, mrk, parseMode := b.getVoteMessage()
 	m, err := b.Send(b.Channel, msg, mrk, parseMode)
 	if err != nil {
-		log.Printf("err = %+v\n", err)
-		return err
+		return errors.Wrap(err, "cannot send message to channel during a vote creation")
 	}
 
-	b.PinMessage(m)
+	b.UnpinMessage()
+
+	err = b.PinMessage(m)
+	if err != nil {
+		return errors.Wrap(err, "cannot pin message")
+	}
 
 	return nil
 }
@@ -159,11 +163,11 @@ func (b *Bot) GetPinnedMessage(chatID int) (*PinnedMessage, error) {
 
 	r, err := b.Raw("getChat", map[string]string{"chat_id": strconv.Itoa(chatID)})
 	if err != nil {
-		return pm, err
+		return pm, errors.Wrap(err, "cannot get pinned message")
 	}
 
 	if err = json.Unmarshal(r, &response); err != nil {
-		return pm, err
+		return pm, errors.Wrap(err, "cannot Unmarshal response")
 	}
 
 	if response.Result.PinnedMessage.ID > 0 {
@@ -329,7 +333,7 @@ func (b *Bot) voteCaption() string {
 		"No":            noBtn.Text,
 		"Disagree":      dgCount,
 		"DisagreeNames": disagree,
-		"Date":          nextSunday().Format("2006-01-02 15:04"),
+		"Date":          getDate(b.Config.Weekday, b.Config.Hour, b.Config.Minute).Format("2006-01-02 15:04"),
 	}
 
 	return execTpl(t, data)
@@ -342,17 +346,27 @@ func (b *Bot) getMsgID() int {
 	return id
 }
 
-func nextSunday() time.Time {
+func getDate(wd, hour, minute int) time.Time {
 	date := time.Now()
 
 	weekday := int(date.Weekday())
 	loc, _ := time.LoadLocation("Europe/Kiev")
 
-	if weekday != 0 {
-		date = date.AddDate(0, 0, (7 - weekday))
+	magicNum := 7
+	if wd != int(time.Sunday) {
+		magicNum = wd
 	}
 
-	return time.Date(date.Year(), date.Month(), date.Day(), 19, 0, 0, 0, loc)
+	diff := (magicNum - weekday)
+	if diff < 0 {
+		diff += 7
+	}
+
+	if weekday != 0 {
+		date = date.AddDate(0, 0, diff)
+	}
+
+	return time.Date(date.Year(), date.Month(), date.Day(), hour, minute, 0, 0, loc)
 }
 
 func execTpl(t *template.Template, data interface{}) string {

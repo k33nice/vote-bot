@@ -24,6 +24,9 @@ type Config struct {
 		RemindFormat string
 	}
 	NoResult string
+	Weekday  int
+	Hour     int
+	Minute   int
 }
 
 // NewConfig - return new config instance
