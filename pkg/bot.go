@@ -253,6 +253,12 @@ func (b *Bot) GetVoteResult() string {
 // SendReminder - send reminder for players.
 func (b *Bot) SendReminder() {
 	if b.Pinned != nil {
+		rem := model.GetReminderByVoteID(b.getMsgID())
+
+		if rem != nil {
+			return
+		}
+
 		voters := model.GetVotesByVoteID(b.getMsgID())
 		yesBtn, _ := b.getButtons()
 

@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/jinzhu/gorm"
-
 	// for mysql usage
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 )
@@ -53,6 +52,7 @@ func GetEngine() *Engine {
 		)
 
 		db.AutoMigrate(&Vote{})
+		db.AutoMigrate(&Reminder{})
 
 		instance = &Engine{db}
 	})

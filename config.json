@@ -1,0 +1,24 @@
+{
+    "appeals": [
+        "организмы",
+        "черты"
+    ],
+    "place": {
+        "url": "https://funtime.kiev.ua/aktivnie-razvlecheniya/pole-na-libedskoy",
+        "location": {
+            "latitude": 50.437252,
+            "longitude": 30.497326
+        }
+    },
+    "formats": {
+        "voteFormat": "\n{{.Symbols}}\n*Шо вы {{.Appeal}}?* [{{.Date}}]\n\n_{{.Yes}} ({{.Agree}})_\n{{.AgreeNames}}\n----------\n_{{.No}} ({{.Disagree}})_\n{{.DisagreeNames}}\n",
+        "resultFormat": "Го: {{.Agree}}, Не го: {{.Disagree}}",
+        "remindFromat": "{{.Appeal}} {{.Users}} завтра футбол!"
+    },
+    "noResult": "Нихуя",
+    "weekday": 2,
+    "hour": 10,
+    "minute": 30,
+    "admins": ["k33nice", "sensei_k", "timzekid"],
+    "god": "K33nice"
+}

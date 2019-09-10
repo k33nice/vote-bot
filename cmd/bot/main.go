@@ -76,8 +76,12 @@ func main() {
 			curYear, curWeek := now.ISOWeek()
 			pinYear, pinWeek := date.ISOWeek()
 			if (curWeek != pinWeek || curYear != pinYear) && now.Hour() == 16 && un == bot.Me.Username {
-				bot.UnpinMessage()
 				log.Println("Unpin message")
+
+				err := bot.UnpinMessage()
+				if err != nil {
+					log.Printf("cannot upin, err: %v", err)
+				}
 			}
 
 			if bot.Pinned != nil && un == bot.Me.Username && (curWeek == pinWeek && curYear == pinYear) {
@@ -94,9 +98,9 @@ func main() {
 				}
 			}
 
-			if int(now.Weekday()) == bot.Config.Weekday-1 && now.Hour() == 20 {
+			if int(now.Weekday()) == bot.Config.Weekday-1 && now.Hour() == 20 && now.Minute() == 0 {
 				log.Println("send reminder")
-				bot.SendReminder()
+				// bot.SendReminder()
 			}
 
 			bot.CreateHandlers()
@@ -122,7 +126,8 @@ func handleStart(m *tb.Message) {
 }
 
 func handleStartOnChannel(m *tb.Message) {
-	if strings.ToLower(m.Sender.Username) != "k33nice" {
+	if strings.ToLower(m.Sender.Username) != bot.Config.God {
+		log.Printf("Cannot start need: %s, got: %s", m.Sender.Username, bot.Config.God)
 		return
 	}
 
@@ -137,7 +142,13 @@ func handleStartOnChannel(m *tb.Message) {
 	if err != nil {
 		log.Printf("handle start err: %s", err)
 	}
-	log.Println(pm.Text)
+	if pm == nil {
+		log.Printf("no pinned message found")
+		return
+	}
+
+	log.Printf("pm = %+v\n", pm)
+
 	if pm != nil {
 		bot.Pinned = pm
 	}
@@ -146,10 +157,9 @@ func handleStartOnChannel(m *tb.Message) {
 }
 
 func handleSetDate(m *tb.Message) {
-	allowedUsers := map[string]bool{
-		"k33nice":  true,
-		"sensei_k": true,
-		"timzekid": true,
+	allowedUsers := make(map[string]bool, len(bot.Config.Admins))
+	for _, admin := range bot.Config.Admins {
+		allowedUsers[admin] = true
 	}
 
 	sender := strings.ToLower(m.Sender.Username)

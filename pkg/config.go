@@ -27,6 +27,8 @@ type Config struct {
 	Weekday  int
 	Hour     int
 	Minute   int
+	Admins   []string
+	God      string
 }
 
 // NewConfig - return new config instance
