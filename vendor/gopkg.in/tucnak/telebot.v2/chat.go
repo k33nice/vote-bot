@@ -6,9 +6,10 @@ import "strconv"
 type User struct {
 	ID int `json:"id"`
 
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Username  string `json:"username"`
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	Username     string `json:"username"`
+	LanguageCode string `json:"language_code"`
 }
 
 // Recipient returns user ID (see Recipient interface).
@@ -33,9 +34,6 @@ type Chat struct {
 
 // Recipient returns chat ID (see Recipient interface).
 func (c *Chat) Recipient() string {
-	if c.Type == ChatChannel {
-		return "@" + c.Username
-	}
 	return strconv.FormatInt(c.ID, 10)
 }
 

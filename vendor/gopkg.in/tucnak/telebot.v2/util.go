@@ -3,13 +3,18 @@ package telebot
 import (
 	"encoding/json"
 	"strconv"
+	"log"
 
 	"github.com/pkg/errors"
 )
 
 func (b *Bot) debug(err error) {
+	err = errors.WithStack(err)
+
 	if b.reporter != nil {
-		b.reporter(errors.WithStack(err))
+		b.reporter(err)
+	} else {
+		log.Printf("%+v\n", err)
 	}
 }
 
@@ -206,4 +211,11 @@ func processButtons(keys [][]InlineButton) {
 func embedRights(p map[string]string, prv Rights) {
 	jsonRepr, _ := json.Marshal(prv)
 	json.Unmarshal(jsonRepr, &p)
+}
+
+func thumbnailToFilemap(thumb *Photo) map[string]File {
+	if thumb != nil {
+		return map[string]File{"thumb": thumb.File}
+	}
+	return nil
 }

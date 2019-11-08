@@ -25,8 +25,13 @@ func NewBot(pref Settings) (*Bot, error) {
 		client = http.DefaultClient
 	}
 
+	if pref.URL == "" {
+		pref.URL = DefaultApiURL
+	}
+
 	bot := &Bot{
 		Token:   pref.Token,
+		URL:     pref.URL,
 		Updates: make(chan Update, pref.Updates),
 		Poller:  pref.Poller,
 
@@ -49,6 +54,7 @@ func NewBot(pref Settings) (*Bot, error) {
 type Bot struct {
 	Me      *User
 	Token   string
+	URL     string
 	Updates chan Update
 	Poller  Poller
 
@@ -61,6 +67,9 @@ type Bot struct {
 // Settings represents a utility struct for passing certain
 // properties of a bot around and is required to make bots.
 type Settings struct {
+	// Telegram API Url
+	URL string
+
 	// Telegram token
 	Token string
 
@@ -88,20 +97,28 @@ type Update struct {
 	EditedChannelPost *Message  `json:"edited_channel_post,omitempty"`
 	Callback          *Callback `json:"callback_query,omitempty"`
 	Query             *Query    `json:"inline_query,omitempty"`
-
 	ChosenInlineResult *ChosenInlineResult `json:"chosen_inline_result,omitempty"`
+	PreCheckoutQuery *PreCheckoutQuery `json:"pre_checkout_query,omitempty"`
 }
 
 // ChosenInlineResult represents a result of an inline query that was chosen
 // by the user and sent to their chat partner.
 type ChosenInlineResult struct {
+	From     User      `json:"from"`
+	Location *Location `json:"location,omitempty"`
 	ResultID string `json:"result_id"`
 	Query    string `json:"query"`
 	// Inline messages only!
 	MessageID string `json:"inline_message_id"`
 
-	From     User      `json:"from"`
-	Location *Location `json:"location,omitempty"`
+}
+
+type PreCheckoutQuery struct {
+	Sender   *User  `json:"from"`
+	ID       string `json:"id"`
+	Currency string `json:"currency"`
+	Payload  string `json:"invoice_payload"`
+	Total    int    `json:"total_amount"`
 }
 
 // Handle lets you set the handler for some command name or
@@ -262,7 +279,9 @@ func (b *Bot) incomingUpdate(upd *Update) {
 					// i'm not 100% sure that any of the values
 					// won't be cached, so I pass them all in:
 					go func(b *Bot, handler func(int64, int64), from, to int64) {
-						defer b.deferDebug()
+						if b.reporter == nil {
+							defer b.deferDebug()
+						}
 						handler(from, to)
 					}(b, handler, m.MigrateFrom, m.MigrateTo)
 
@@ -308,7 +327,9 @@ func (b *Bot) incomingUpdate(upd *Update) {
 							// i'm not 100% sure that any of the values
 							// won't be cached, so I pass them all in:
 							go func(b *Bot, handler func(*Callback), c *Callback) {
-								defer b.deferDebug()
+								if b.reporter == nil {
+									defer b.deferDebug()
+								}
 								handler(c)
 							}(b, handler, upd.Callback)
 
@@ -325,7 +346,9 @@ func (b *Bot) incomingUpdate(upd *Update) {
 				// i'm not 100% sure that any of the values
 				// won't be cached, so I pass them all in:
 				go func(b *Bot, handler func(*Callback), c *Callback) {
-					defer b.deferDebug()
+					if b.reporter == nil {
+						defer b.deferDebug()
+					}
 					handler(c)
 				}(b, handler, upd.Callback)
 
@@ -342,7 +365,9 @@ func (b *Bot) incomingUpdate(upd *Update) {
 				// i'm not 100% sure that any of the values
 				// won't be cached, so I pass them all in:
 				go func(b *Bot, handler func(*Query), q *Query) {
-					defer b.deferDebug()
+					if b.reporter == nil {
+						defer b.deferDebug()
+					}
 					handler(q)
 				}(b, handler, upd.Query)
 
@@ -360,12 +385,34 @@ func (b *Bot) incomingUpdate(upd *Update) {
 				// won't be cached, so I pass them all in:
 				go func(b *Bot, handler func(*ChosenInlineResult),
 					r *ChosenInlineResult) {
-					defer b.deferDebug()
+					if b.reporter == nil {
+						defer b.deferDebug()
+					}
 					handler(r)
 				}(b, handler, upd.ChosenInlineResult)
 
 			} else {
 				panic("telebot: chosen inline result handler is bad")
+			}
+		}
+		return
+	}
+
+	if upd.PreCheckoutQuery != nil {
+		if handler, ok := b.handlers[OnCheckout]; ok {
+			if handler, ok := handler.(func(*PreCheckoutQuery)); ok {
+				// i'm not 100% sure that any of the values
+				// won't be cached, so I pass them all in:
+				go func(b *Bot, handler func(*PreCheckoutQuery),
+					r *PreCheckoutQuery) {
+					if b.reporter == nil {
+						defer b.deferDebug()
+					}
+					handler(r)
+				}(b, handler, upd.PreCheckoutQuery)
+
+			} else {
+				panic("telebot: checkout handler is bad")
 			}
 		}
 		return
@@ -382,7 +429,9 @@ func (b *Bot) handle(end string, m *Message) bool {
 		// i'm not 100% sure that any of the values
 		// won't be cached, so I pass them all in:
 		go func(b *Bot, handler func(*Message), m *Message) {
-			defer b.deferDebug()
+			if b.reporter == nil {
+				defer b.deferDebug()
+			}
 			handler(m)
 		}(b, handler, m)
 
@@ -454,8 +503,8 @@ func (b *Bot) Stop() {
 // Send accepts 2+ arguments, starting with destination chat, followed by
 // some Sendable (or string!) and optional send options.
 //
-// Note: since most arguments are of type interface{}, make sure to pass
-//       them by-pointer, NOT by-value, which will result in a panic.
+// Note: since most arguments are of type interface{}, but have pointer
+// 		method recievers, make sure to pass them by-pointer, NOT by-value.
 //
 // What is a send option exactly? It can be one of the following types:
 //
@@ -474,7 +523,7 @@ func (b *Bot) Send(to Recipient, what interface{}, options ...interface{}) (*Mes
 	case Sendable:
 		return object.Send(b, to, sendOpts)
 	default:
-		panic("telebot: unsupported sendable")
+		return nil, errors.New("telebot: unsupported sendable")
 	}
 }
 
@@ -484,45 +533,58 @@ func (b *Bot) Send(to Recipient, what interface{}, options ...interface{}) (*Mes
 // From all existing options, it only supports telebot.Silent.
 func (b *Bot) SendAlbum(to Recipient, a Album, options ...interface{}) ([]Message, error) {
 	media := make([]string, len(a))
-	files := make(map[string]string)
+	files := make(map[string]File)
 
 	for i, x := range a {
-		var (
-			f                    *File
-			caption              string
-			mediaRepr, mediaType string
-		)
+		var mediaRepr string
+		var jsonRepr []byte
 
-		switch y := x.(type) {
-		case *Photo:
-			f = &y.File
-			mediaType = "photo"
-			caption = y.Caption
-		case *Video:
-			f = &y.File
-			mediaType = "video"
-			caption = y.Caption
-		default:
-			return nil, errors.Errorf("telebot: album entry #%d is not valid", i)
-		}
+		f := x.MediaFile()
 
 		if f.InCloud() {
 			mediaRepr = f.FileID
 		} else if f.FileURL != "" {
 			mediaRepr = f.FileURL
-		} else if f.OnDisk() {
+		} else if f.OnDisk() || f.FileReader != nil {
 			mediaRepr = fmt.Sprintf("attach://%d", i)
-			files[strconv.Itoa(i)] = f.FileLocal
+			files[strconv.Itoa(i)] = *f
 		} else {
 			return nil, errors.Errorf(
 				"telebot: album entry #%d doesn't exist anywhere", i)
 		}
 
-		jsonRepr, _ := json.Marshal(map[string]string{
-			"type":    mediaType,
-			"media":   mediaRepr,
-			"caption": caption,
-		})
+		switch y := x.(type) {
+		case *Photo:
+			jsonRepr, _ = json.Marshal(struct {
+				Type    string `json:"type"`
+				Caption string `json:"caption"`
+				Media   string `json:"media"`
+			}{
+				"photo",
+				y.Caption,
+				mediaRepr,
+			})
+		case *Video:
+			jsonRepr, _ = json.Marshal(struct {
+				Type              string `json:"type"`
+				Caption           string `json:"caption"`
+				Media             string `json:"media"`
+				Width             int    `json:"width,omitempty"`
+				Height            int    `json:"height,omitempty"`
+				Duration          int    `json:"duration,omitempty"`
+				SupportsStreaming bool   `json:"supports_streaming,omitempty"`
+			}{
+				"video",
+				y.Caption,
+				mediaRepr,
+				y.Width,
+				y.Height,
+				y.Duration,
+				y.SupportsStreaming,
+			})
+		default:
+			return nil, errors.Errorf("telebot: album entry #%d is not valid", i)
+		}
 
 		media[i] = string(jsonRepr)
 	}
@@ -618,7 +680,6 @@ func (b *Bot) Forward(to Recipient, what *Message, options ...interface{}) (*Mes
 //
 func (b *Bot) Edit(message Editable, what interface{}, options ...interface{}) (*Message, error) {
 	messageID, chatID := message.MessageSig()
-	// TODO: add support for inline messages (chatID = 0)
 
 	params := map[string]string{}
 
@@ -675,6 +736,131 @@ func (b *Bot) EditCaption(originalMsg Editable, caption string) (*Message, error
 	return extractMsgResponse(respJSON)
 }
 
+// EditMedia used to edit already sent media with known recepient and message id.
+//
+// Use cases:
+//
+//     bot.EditMedia(msg, &tb.Photo{File: tb.FromDisk("chicken.jpg")});
+//     bot.EditMedia(msg, &tb.Video{File: tb.FromURL("http://video.mp4")});
+//
+func (b *Bot) EditMedia(message Editable, inputMedia InputMedia, options ...interface{}) (*Message, error) {
+	var mediaRepr string;
+	var jsonRepr []byte;
+	var thumb *Photo;
+
+	file := make(map[string]File);
+
+	f := inputMedia.MediaFile();
+
+	if f.InCloud() {
+		mediaRepr = f.FileID;
+	} else if f.FileURL != "" {
+		mediaRepr = f.FileURL;
+	} else if f.OnDisk() || f.FileReader != nil {
+		s := f.FileLocal;
+		if (f.FileReader != nil) {
+			s = "0";
+		}
+		mediaRepr = "attach://" + s;
+		file[s] = *f;
+	} else {
+		return nil, errors.Errorf(
+			"telebot: can't edit media, it doesn't exist anywhere");
+	}
+
+	type FileJson struct {
+		// All types.
+		Type              string `json:"type"`
+		Caption           string `json:"caption"`
+		Media             string `json:"media"`
+
+		// Video.
+		Width             int    `json:"width,omitempty"`
+		Height            int    `json:"height,omitempty"`
+		SupportsStreaming bool   `json:"supports_streaming,omitempty"`
+
+		// Video and audio.
+		Duration          int    `json:"duration,omitempty"`
+
+		// Document.
+		FileName          string `json:"file_name"`
+
+		// Document, video and audio.
+		Thumbnail         string `json:"thumb,omitempty"`
+		MIME              string `json:"mime_type,omitempty"`
+
+		// Audio.
+		Title             string `json:"title,omitempty"`
+		Performer         string `json:"performer,omitempty"`
+	}
+
+	resultMedia := &FileJson {Media: mediaRepr};
+
+	switch y := inputMedia.(type) {
+		case *Photo:
+			resultMedia.Type = "photo";
+			resultMedia.Caption = y.Caption;
+		case *Video:
+			resultMedia.Type = "video";
+			resultMedia.Caption = y.Caption;
+			resultMedia.Width = y.Width;
+			resultMedia.Height = y.Height;
+			resultMedia.Duration = y.Duration;
+			resultMedia.SupportsStreaming = y.SupportsStreaming;
+			resultMedia.MIME = y.MIME;
+			thumb = y.Thumbnail;
+			if thumb != nil {
+				resultMedia.Thumbnail = "attach://thumb";
+			}
+		case *Document:
+			resultMedia.Type = "document";
+			resultMedia.Caption = y.Caption;
+			resultMedia.FileName = y.FileName;
+			resultMedia.MIME = y.MIME;
+			thumb = y.Thumbnail;
+			if thumb != nil {
+				resultMedia.Thumbnail = "attach://thumb";
+			}
+		case *Audio:
+			resultMedia.Type = "audio";
+			resultMedia.Caption = y.Caption;
+			resultMedia.Duration = y.Duration;
+			resultMedia.MIME = y.MIME;
+			resultMedia.Title = y.Title;
+			resultMedia.Performer = y.Performer;
+		default:
+			return nil, errors.Errorf("telebot: inputMedia entry is not valid");
+	}
+
+	messageID, chatID := message.MessageSig();
+
+	jsonRepr, _ = json.Marshal(resultMedia);
+	params := map[string]string{};
+	params["media"] = string(jsonRepr);
+
+	// If inline message.
+	if chatID == 0 {
+		params["inline_message_id"] = messageID;
+	} else {
+		params["chat_id"] = strconv.FormatInt(chatID, 10);
+		params["message_id"] = messageID;
+	}
+
+	if thumb != nil {
+		file["thumb"] = *thumb.MediaFile();
+	}
+
+	sendOpts := extractOptions(options);
+	embedSendOptions(params, sendOpts);
+
+	respJSON, err := b.sendFiles("editMessageMedia", file, params);
+	if err != nil {
+		return nil, err;
+	}
+
+	return extractMsgResponse(respJSON);
+}
+
 // Delete removes the message, including service messages,
 // with the following limitations:
 //
@@ -718,6 +904,27 @@ func (b *Bot) Notify(recipient Recipient, action ChatAction) error {
 	}
 
 	respJSON, err := b.Raw("sendChatAction", params)
+	if err != nil {
+		return err
+	}
+
+	return extractOkResponse(respJSON)
+}
+
+// Accept finalizes the deal.
+func (b *Bot) Accept(query *PreCheckoutQuery, errorMessage ...string) error {
+	params := map[string]string{
+		"pre_checkout_query_id": query.ID,
+	}
+
+	if len(errorMessage) == 0 {
+		params["ok"] = "True"
+	} else {
+		params["ok"] = "False"
+		params["error_message"] = errorMessage[0]
+	}
+
+	respJSON, err := b.Raw("answerPreCheckoutQuery", params)
 	if err != nil {
 		return err
 	}
@@ -806,14 +1013,12 @@ func (b *Bot) FileByID(fileID string) (File, error) {
 // Download saves the file from Telegram servers locally.
 //
 // Maximum file size to download is 20 MB.
-func (b *Bot) Download(f *File, localFilename string) error {
-	g, err := b.FileByID(f.FileID)
+func (b *Bot) Download(file *File, localFilename string) error {
+	reader, err := b.GetFile(file)
 	if err != nil {
-		return err
+		return wrapSystem(err)
 	}
-
-	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s",
-		b.Token, g.FilePath)
+	defer reader.Close()
 
 	out, err := os.Create(localFilename)
 	if err != nil {
@@ -821,23 +1026,34 @@ func (b *Bot) Download(f *File, localFilename string) error {
 	}
 	defer out.Close()
 
-	resp, err := http.Get(url)
+	_, err = io.Copy(out, reader)
 	if err != nil {
 		return wrapSystem(err)
 	}
-	defer resp.Body.Close()
-
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		return wrapSystem(err)
-	}
-
-	g.FileLocal = localFilename
-	*f = g
+	file.FileLocal = localFilename
 
 	return nil
 }
 
+// GetFile from Telegram servers
+func (b *Bot) GetFile(file *File) (io.ReadCloser, error) {
+	f, err := b.FileByID(file.FileID)
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/file/bot%s/%s",
+		b.URL, b.Token, f.FilePath)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	// set FilePath
+	*file = f
+
+	return resp.Body, nil
+}
 // StopLiveLocation should be called to stop broadcasting live message location
 // before Location.LivePeriod expires.
 //
@@ -926,8 +1142,7 @@ func (b *Bot) SetGroupPhoto(chat *Chat, p *Photo) error {
 		"chat_id": chat.Recipient(),
 	}
 
-	respJSON, err := b.sendFiles("setChatPhoto",
-		map[string]string{"photo": p.FileLocal}, params)
+	respJSON, err := b.sendFiles("setChatPhoto", map[string]File{"photo": p.File}, params)
 	if err != nil {
 		return err
 	}
@@ -1140,5 +1355,5 @@ func (b *Bot) FileURLByID(fileID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "https://api.telegram.org/file/bot" + b.Token + "/" + f.FilePath, nil
+	return fmt.Sprintf("%s/file/bot%s/%s", b.URL, b.Token, f.FilePath), nil
 }

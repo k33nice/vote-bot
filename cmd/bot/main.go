@@ -54,6 +54,7 @@ func main() {
 	bot.Handle("/start_on_channel", handleStartOnChannel)
 
 	bot.Handle("/set_date", handleSetDate)
+	bot.Handle("/create", handleCreate)
 
 	bot.Handle(tb.OnAddedToGroup, handleStart)
 
@@ -209,6 +210,31 @@ func handleSetDate(m *tb.Message) {
 
 	bot.UpdateVote()
 	bot.Send(m.Sender, "👌")
+}
+
+func handleCreate(m *tb.Message) {
+	allowedUsers := make(map[string]bool, len(bot.Config.Admins))
+	for _, admin := range bot.Config.Admins {
+		allowedUsers[admin] = true
+	}
+
+	sender := strings.ToLower(m.Sender.Username)
+	if _, ok := allowedUsers[sender]; !ok {
+		bot.Send(m.Sender, "Permission denied, Пёс")
+		return
+	}
+
+	log.Println("Force unpin message")
+
+	err := bot.UnpinMessage()
+	if err != nil {
+		log.Printf("cannot upin, err: %v", err)
+	}
+
+	log.Println("Force create vote")
+	if err := bot.CreateVote(); err != nil {
+		log.Printf("caught error: %s", err)
+	}
 }
 
 func formatError(m *tb.Message) {

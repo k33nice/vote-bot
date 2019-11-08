@@ -2,6 +2,8 @@
 //
 // Example:
 //
+//		package main
+//
 //		import (
 //			"time"
 //			tb "gopkg.in/tucnak/telebot.v2"
@@ -10,16 +12,16 @@
 //		func main() {
 //			b, err := tb.NewBot(tb.Settings{
 //				Token: "TOKEN_HERE",
-//				Poller: &tb.LongPoller{10 * time.Second},
+//				Poller: &tb.LongPoller{Timeout: 10 * time.Second},
 //			})
 //
 //			if err != nil {
 //				return
 //			}
 //
-//			b.Handle(tb.OnMessage, func(m *tb.Message) {
+//			b.Handle(tb.OnText, func(m *tb.Message) {
 //				b.Send(m.Sender, "hello world")
-//			}
+//			})
 //
 //			b.Start()
 //		}
@@ -81,6 +83,11 @@ const (
 	//
 	// Handler: func(*ChosenInlineResult)
 	OnChosenInlineResult = "\achosen_inline_result"
+
+	// Will fire on PreCheckoutQuery.
+	//
+	// Handler: func(*PreCheckoutQuery)
+	OnCheckout = "\apre_checkout_query"
 )
 
 // ChatAction is a client-side status indicating bot activity.
@@ -156,3 +163,5 @@ const (
 	FeatureMouth    MaskFeature = "mouth"
 	FeatureChin     MaskFeature = "chin"
 )
+
+const DefaultApiURL = "https://api.telegram.org"
